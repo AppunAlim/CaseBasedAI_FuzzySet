@@ -1,112 +1,67 @@
 import csv
 
+def linear_up(x, a, b):
+    if x <= a: return 0
+    if x >= b: return 1
+    return (x - a) / (b - a)
 
-def pelayanan_buruk(x):
-    if x <= 40:
-        return 1
-    elif 40 < x < 60:
-        return (60 - x) / (60 - 40)
-    else:
-        return 0
+def linear_down(x, a, b):
+    if x <= a: return 1
+    if x >= b: return 0
+    return (b - x) / (b - a)
 
+def segitiga(x, a, b, c):
+    if x <= a or x >= c: return 0
+    if a < x <= b: return (x - a) / (b - a)
+    if b < x < c: return (c - x) / (c - b)
+    return 0
 
+# setiap variabel func fuzzifikasi dipisah jadi lebih modular dan mudah dipahami
+def fuzzify_pelayanan(x):
+    return {
+        'buruk': linear_down(x, 40, 60),
+        'sedang': segitiga(x, 40, 60, 80),
+        'baik': linear_up(x, 60, 80)
+    }
 
-def pelayanan_sedang(x):
-    if 40 <= x <= 60:
-        return (x - 40) / (60 - 40)
-    elif 60 < x <= 80:
-        return (80 - x) / (80 - 60)
-    else:
-        return 0
+def fuzzify_harga(x):
+    return {
+        'murah': linear_down(x, 30000, 40000),
+        'sedang': segitiga(x, 30000, 40000, 50000),
+        'mahal': linear_up(x, 40000, 50000)
+    }
 
+def inferensi_fuzzy(pelayanan_val, harga_val):
+    p = fuzzify_pelayanan(pelayanan_val)
+    h = fuzzify_harga(harga_val)
 
+    # Aturan dikelompokin untuk setiap skor
+    r_rendah = [
+        min(p['sedang'], h['mahal']),
+        min(p['buruk'], h['sedang']),
+        min(p['buruk'], h['mahal'])
+    ]
+    skor_rendah = max(r_rendah)
 
-def pelayanan_baik(x):
-    if x <= 60:
-        return 0
-    elif 60 < x < 80:
-        return (x - 60) / (80 - 60)
-    else:
-        return 1
+    r_sedang = [
+        min(p['baik'], h['mahal']),
+        min(p['sedang'], h['sedang']),
+        min(p['buruk'], h['murah'])
+    ]
+    skor_sedang = max(r_sedang)
 
+    r_tinggi = [
+        min(p['baik'], h['murah']),
+        min(p['baik'], h['sedang']),
+        min(p['sedang'], h['murah'])
+    ]
+    skor_tinggi = max(r_tinggi)
 
+    # Defuzzification (Sugeno Style)
+    pembilang = (skor_rendah * 40) + (skor_sedang * 70) + (skor_tinggi * 100)
+    penyebut = skor_rendah + skor_sedang + skor_tinggi
 
-def harga_murah(x):
-    if x <= 30000:
-        return 1
-    elif 30000 < x < 40000:
-        return (40000 - x) / (40000 - 30000)
-    else:
-        return 0
-
-
-
-def harga_sedang(x):
-    if 30000 <= x <= 40000:
-        return (x - 30000) / (40000 - 30000)
-    elif 40000 < x <= 50000:
-        return (50000 - x) / (50000 - 40000)
-    else:
-        return 0
-
-
-
-def harga_mahal(x):
-    if x <= 40000:
-        return 0
-    elif 40000 < x < 50000:
-        return (x - 40000) / (50000 - 40000)
-    else:
-        return 1
-
-
-
-
-def inferensi_fuzzy(pelayanan, harga):
-    # Fuzzification pelayanan
-    buruk = pelayanan_buruk(pelayanan)
-    sedang_pelayanan = pelayanan_sedang(pelayanan)
-    baik = pelayanan_baik(pelayanan)
-
-    # Fuzzification harga
-    murah = harga_murah(harga)
-    sedang_harga = harga_sedang(harga)
-    mahal = harga_mahal(harga)
-
-  
-
-    # Kelayakan rendah
-    r1 = min(sedang_pelayanan, mahal)
-    r2 = min(buruk, sedang_harga)
-    r3 = min(buruk, mahal)
-
-    rendah = max(r1, r2, r3)
-
-    # Kelayakan sedang
-    r4 = min(baik, mahal)
-    r5 = min(sedang_pelayanan, sedang_harga)
-    r6 = min(buruk, murah)
-
-    sedang = max(r4, r5, r6)
-
-    # Kelayakan tinggi
-    r7 = min(baik, murah)
-    r8 = min(baik, sedang_harga)
-    r9 = min(sedang_pelayanan, murah)
-
-    tinggi = max(r7, r8, r9)
-
-    
-
-    pembilang = (rendah * 40) + (sedang * 70) + (tinggi * 100)
-    penyebut = rendah + sedang + tinggi
-
-    if penyebut == 0:
-        return 0
-
-    skor = pembilang / penyebut
-
-    return skor
+    return pembilang / penyebut if penyebut != 0 else 0
 
 
 # =========================== MEMBACA DATA DARI FILE CSV =====================
@@ -114,19 +69,20 @@ def inferensi_fuzzy(pelayanan, harga):
 
 def baca_data(nama_file):
     data_restoran = []
-
-    with open(nama_file, mode='r') as file:
-        csv_reader = csv.DictReader(file)
-
-        for row in csv_reader:
-            restoran = {
-                'id': int(row['id Pelanggan']),
-                'pelayanan': int(row['Pelayanan']),
-                'harga': float(row['harga'])
-            }
-
-            data_restoran.append(restoran)
-
+    try:
+        with open(nama_file, mode='r', encoding='utf-8-sig') as file: # utf-8-sig untuk handle BOM excel
+            csv_reader = csv.DictReader(file)
+            for row in csv_reader:
+                try:
+                    data_restoran.append({
+                        'id': int(row['id Pelanggan']),
+                        'pelayanan': int(row['Pelayanan']),
+                        'harga': float(row['harga'])
+                    })
+                except (ValueError, KeyError):
+                    continue # Skip baris yang datanya cacat
+    except FileNotFoundError:
+        print(f"Error: File {nama_file} tidak ditemukan.")
     return data_restoran
 
 
@@ -205,5 +161,3 @@ simpan_hasil(top_5, file_output)
 
 print()
 print('Hasil berhasil disimpan ke file :', file_output)
-
-
